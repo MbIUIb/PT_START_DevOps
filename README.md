@@ -1,6 +1,6 @@
 # PT_START_DevOps
 
 <!--Установка-->
-## Установка зависимостей
+### Установка зависимостей
 
 ```pip install -r requirements.txt```
