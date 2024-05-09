@@ -409,7 +409,7 @@ def getServicesCommand(update: Update, context: CallbackContext):
             context: объект telegram.ext.CallbackContext.
     """
 
-    command = "service --status-all | grep + | head"
+    command = "systemctl list-units --type service --state running | head"
     data = remoteCmdExecutionBySSH(command)
     data = str(data).replace('\\n', '\n')[2:-1]
     update.message.reply_text(data)
