@@ -1,9 +1,20 @@
 # /bin/bash
 import os
 import re
+import logging
 
 import paramiko
 from dotenv import load_dotenv
+
+import psycopg2
+from psycopg2 import Error
+
+
+logging.basicConfig(
+        filename='logfile.txt',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
 
 
 def findPhoneNumbers(text: str):
@@ -31,13 +42,13 @@ def findPhoneNumbers(text: str):
     phoneNumberList = phoneNumRegex.findall(text)
 
     if phoneNumberList:
-        numbers = ""
+        numbersList = []
         for i in range(len(phoneNumberList)):
-            numbers += f"{i + 1}. +7 {'-'.join(phoneNumberList[i][1:])}\n"
+            numbersList.append((i + 1, "+7 " + '-'.join(phoneNumberList[i][1:])))
 
-        return numbers
+        return numbersList
     else:
-        return "Телефонные номера не найдены"
+        return None
 
 
 def findEmails(text: str):
@@ -61,17 +72,17 @@ def findEmails(text: str):
             3. mn.comm876biuib@mn.com
     """
 
-    phoneNumRegex = re.compile(r"\w+[-.\w]*@[-.\w]+\.[a-zA-Z]{2,}\s")
-    phoneNumberList = phoneNumRegex.findall(text)
+    emailRegex = re.compile(r"\w+[-.\w]*@[-.\w]+\.[a-zA-Z]{2,}")
+    emailsList = emailRegex.findall(text)
 
-    if phoneNumberList:
-        numbers = ""
-        for i in range(len(phoneNumberList)):
-            numbers += f"{i + 1}. {phoneNumberList[i]}"
+    if emailsList:
+        emails = []
+        for i in range(len(emailsList)):
+            emails.append((i + 1, emailsList[i].strip()))
 
-        return numbers
+        return emails
     else:
-        return "Email-ы не найдены"
+        return None
 
 
 def verifyPassword(password: str):
@@ -123,3 +134,86 @@ def remoteCmdExecutionBySSH(command: str):
     data = stdout.read() + stderr.read()
     client.close()
     return data
+
+
+def getAllRowFromDBTable(table: str):
+    message = ""
+    connection = None
+    cursor = None
+
+    try:
+        connection = psycopg2.connect(user=os.getenv("DB_USER"),
+                                      password=os.getenv("DB_PASSWORD"),
+                                      host=os.getenv("DB_HOST"),
+                                      port=os.getenv("DB_PORT"),
+                                      database=os.getenv("DB_DATABASE"))
+
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT * FROM {table};")
+        data = cursor.fetchall()
+        for row in data:
+            message += f"{row[0]}: {row[1]}\n"
+        logging.info("Команда успешно выполнена")
+    except (Exception, Error) as error:
+        message = "Ошибка при работе с PostgreSQL"
+        logging.error("Ошибка при работе с PostgreSQL: %s", error)
+    finally:
+        if connection is not None:
+            cursor.close()
+            connection.close()
+
+        return message
+
+
+def insertInBDTable(table: str, column: str, data: str):
+    state = False
+    connection = None
+    cursor = None
+
+    try:
+        connection = psycopg2.connect(user=os.getenv("DB_USER"),
+                                      password=os.getenv("DB_PASSWORD"),
+                                      host=os.getenv("DB_HOST"),
+                                      port=os.getenv("DB_PORT"),
+                                      database=os.getenv("DB_DATABASE"))
+
+        cursor = connection.cursor()
+        cursor.execute(f"INSERT INTO {table} ({column}) VALUES ('{data}');")
+        connection.commit()
+        state = True
+        logging.info("Команда успешно выполнена")
+    except (Exception, Error) as error:
+        logging.error("Ошибка при работе с PostgreSQL: %s", error)
+    finally:
+        if connection is not None:
+            cursor.close()
+            connection.close()
+            logging.info("Соединение с PostgreSQL закрыто")
+
+        return state
+
+
+def rowExistsInBDTable(table: str, column: str, string: str):
+    exists = False
+    connection = None
+    cursor = None
+
+    try:
+        connection = psycopg2.connect(user=os.getenv("DB_USER"),
+                                      password=os.getenv("DB_PASSWORD"),
+                                      host=os.getenv("DB_HOST"),
+                                      port=os.getenv("DB_PORT"),
+                                      database=os.getenv("DB_DATABASE"))
+
+        cursor = connection.cursor()
+        cursor.execute(f"SELECT exists (SELECT 1 FROM {table} WHERE {column} = '{string}' LIMIT 1);")
+        data = cursor.fetchall()
+        logging.info("Команда успешно выполнена")
+    except (Exception, Error) as error:
+        logging.error("Ошибка при работе с PostgreSQL: %s", error)
+    finally:
+        if connection is not None:
+            cursor.close()
+            connection.close()
+
+        return data[0][0]

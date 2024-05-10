@@ -1,5 +1,6 @@
 # /bin/bash
 import logging
+from uuid import uuid4
 
 from telegram import Update
 from telegram.ext import Updater, ConversationHandler, CommandHandler, MessageHandler, Filters, CallbackContext
@@ -47,7 +48,11 @@ def helpCommand(update: Update, context: CallbackContext):
                                    "/get_ps - запущенные процессы\n"
                                    "/get_ss - используемые порты\n"
                                    "/get_apt_list *args - информация об установленных пакетах\n"
-                                   "/get_services - некоторые запущенные сервисы",
+                                   "/get_services - некоторые запущенные сервисы\n"
+                                   "\n<b>База данных</b>\n"
+                                   "/get_repl_logs - логи о репликации БД\n"
+                                   "/get_emails - вывод email-ов из БД\n"
+                                   "/get_phone_numbers - вывод телефонных номеров\n",
                               parse_mode="HTML")
 
 
@@ -82,6 +87,51 @@ def findEmailsAnswer(update: Update, context: CallbackContext):
         Является вторым этапом диалога в процессе которого пользователю
         отправляется сообщение со списком всех найденных email-ов
         или сообщение об их отсутствии.
+        Проверяет найденные email на предмет их наличия в БД и
+        предлагает записать отсутствующие в записях.
+
+        Args:
+            update: объект telegram.update.Update.
+            context: объект telegram.ext.CallbackContext.
+
+        Returns:
+            Возврщает обработчику строку-состояние 'findEmailsBDAnswer'
+    """
+
+    message = ""
+    emails = findEmails(update.message.text)
+    context.user_data['emails'] = emails
+    notInBD = False
+
+    if emails:
+
+        for emailNumber, email in emails:
+            if rowExistsInBDTable("emails", "email", email):
+                message += f"✓ {emailNumber}: {email}\n"
+            else:
+                message += f"✕ {emailNumber}: {email}\n"
+                notInBD = True
+
+    else:
+        message = "Email-ы не найдены!"
+
+    if notInBD:
+        message += "\nДобавить новые email-ы в БД?\n[Да/Нет]"
+        update.message.reply_text(text=message)
+        return "findEmailsBDAnswer"
+    else:
+        message += "\nВсе Email-ы есть в БД"
+        update.message.reply_text(text=message)
+        return ConversationHandler.END
+
+
+def findEmailsBDAnswer(update: Update, context: CallbackContext):
+    """ Производит запись email-ов в БД в случае согласия и уведомляет пользователя
+
+        Является третьим этапом диалога в процессе которого пользователю
+        отправляется сообщение со списком всех найденных email-ов
+        или сообщение об их отсутствии.
+        Записывает отсутствующие в БД email-ы при согласии пользователя.
 
         Args:
             update: объект telegram.update.Update.
@@ -92,7 +142,21 @@ def findEmailsAnswer(update: Update, context: CallbackContext):
             сообщающую об окончании диалога
     """
 
-    update.message.reply_text(text=findEmails(update.message.text))
+    message = "Произошла ошибка!"
+    if update.message.text == "Да":
+        emails = context.user_data['emails']
+
+        if emails:
+            for emailNumber, email in emails:
+                if not rowExistsInBDTable("emails", "email", email):
+                    if insertInBDTable('emails', 'email', email):
+                        message = "Email-ы успешно добавлены"
+                    else:
+                        message = "Произошла ошибка при работе с PostgreSQL"
+    else:
+        message = "Спасибо, что пользуетесь нашим сервисом!"
+
+    update.message.reply_text(text=message)
     return ConversationHandler.END
 
 
@@ -121,6 +185,8 @@ def findPhoneNumbersAnswer(update: Update, context: CallbackContext):
         Является вторым этапом диалога в процессе которого пользователю
         отправляется сообщение со списком всех найденных телефонных
         номеров или сообщение об их отсутствии.
+        Проверяет найденные телефонные номера на предмет их наличия в
+        БД и предлагает записать отсутствующие в записях.
 
         Args:
             update: объект telegram.update.Update.
@@ -131,7 +197,65 @@ def findPhoneNumbersAnswer(update: Update, context: CallbackContext):
             сообщающую об окончании диалога
     """
 
-    update.message.reply_text(text=findPhoneNumbers(update.message.text))
+    message = ""
+    phoneNumbers = findPhoneNumbers(update.message.text)
+    context.user_data['phoneNumbers'] = phoneNumbers
+    notInBD = False
+
+    if phoneNumbers:
+        for phoneNumberNumber, phoneNumber in phoneNumbers:
+            if rowExistsInBDTable("numbers", "number", phoneNumber):
+                message += f"✓ {phoneNumberNumber}: {phoneNumber}\n"
+            else:
+                message += f"✕ {phoneNumberNumber}: {phoneNumber}\n"
+                notInBD = True
+
+    else:
+        message = "Телефонные номера не найдены!"
+
+    if notInBD:
+        message += "\nДобавить новые телефонные номера в БД?\n[Да/Нет]"
+        update.message.reply_text(text=message)
+        return "findPhoneNumbersBDAnswer"
+    else:
+        message += "\nВсе телефонные номера есть в БД"
+        update.message.reply_text(text=message)
+        return ConversationHandler.END
+
+
+def findPhoneNumbersBDAnswer(update: Update, context: CallbackContext):
+    """ Производит запись телефонных номеров в БД в случае согласия и уведомляет пользователя
+
+        Является третьим этапом диалога в процессе которого пользователю
+        отправляется сообщение со списком всех найденных телефонных номеров
+        или сообщение об их отсутствии.
+        Записывает отсутствующие в БД телефонные номера при согласии
+        пользователя.
+
+        Args:
+            update: объект telegram.update.Update.
+            context: объект telegram.ext.CallbackContext.
+
+        Returns:
+            Возвращает обработчику константу 'ConversationHandler.END',
+            сообщающую об окончании диалога
+    """
+
+    message = "Произошла ошибка!"
+    if update.message.text == "Да":
+        phoneNumbers = context.user_data['phoneNumbers']
+
+        if phoneNumbers:
+            for phoneNumberNumber, phoneNumber in phoneNumbers:
+                if not rowExistsInBDTable("numbers", "number", phoneNumber):
+                    if insertInBDTable("numbers", "number", phoneNumber):
+                        message = "Телефонные номера успешно добавлены"
+                    else:
+                        message = "Произошла ошибка при работе с PostgreSQL"
+    else:
+        message = "Спасибо, что пользуетесь нашим сервисом!"
+
+    update.message.reply_text(text=message)
     return ConversationHandler.END
 
 
@@ -415,6 +539,53 @@ def getServicesCommand(update: Update, context: CallbackContext):
     update.message.reply_text(data)
 
 
+def getReplLogCommand(update: Update, context: CallbackContext):
+    """ Отправляет пользователю логи о репликации БД
+
+        Отправляет сообщение, содержащее вывод команды
+        'cat /var/log/postgresql/*.log | grep repl_user | hea'
+        удаленного сервера. Нужны права на чтение для ssh пользователя:
+        'sudo chmod o+r /var/log/postgresql/postgresql-15-main.log'
+
+        Args:
+            update: объект telegram.update.Update.
+            context: объект telegram.ext.CallbackContext.
+    """
+
+    command = "cat /var/log/postgresql/*.log | grep repl_user | head"
+    data = remoteCmdExecutionBySSH(command)
+    data = str(data).replace('\\n', '\n')[2:-1]
+    update.message.reply_text(data)
+
+
+def getEmailsCommand(update: Update, context: CallbackContext):
+    """ Отправляет пользователю список email-ов из базы данных
+
+        Args:
+            update: объект telegram.update.Update.
+            context: объект telegram.ext.CallbackContext.
+
+        Returns:
+            Возврщает обработчику строку-состояние 'findEmailsAnswer'
+    """
+
+    update.message.reply_text(text=getAllRowFromDBTable("emails"))
+
+
+def getPhoneNumbersCommand(update: Update, context: CallbackContext):
+    """ Отправляет пользователю список телефонных номеров из базы данных
+
+        Args:
+            update: объект telegram.update.Update.
+            context: объект telegram.ext.CallbackContext.
+
+        Returns:
+            Возврщает обработчику строку-состояние 'findPhoneNumbersAnswer'
+    """
+
+    update.message.reply_text(text=getAllRowFromDBTable("numbers"))
+
+
 def main():
     # включаем логирование
     logging.basicConfig(
@@ -436,6 +607,7 @@ def main():
         entry_points=[CommandHandler('find_phone_number', findPhoneNumbersCommand)],
         states={
             'findPhoneNumbersAnswer': [MessageHandler(Filters.text & ~Filters.command, findPhoneNumbersAnswer)],
+            'findPhoneNumbersBDAnswer': [MessageHandler(Filters.text & ~Filters.command, findPhoneNumbersBDAnswer)],
         },
         fallbacks=[]
     )
@@ -443,6 +615,7 @@ def main():
         entry_points=[CommandHandler('find_email', findEmailsCommand)],
         states={
             'findEmailsAnswer': [MessageHandler(Filters.text & ~Filters.command, findEmailsAnswer)],
+            'findEmailsBDAnswer': [MessageHandler(Filters.text & ~Filters.command, findEmailsBDAnswer)],
         },
         fallbacks=[]
     )
@@ -473,6 +646,9 @@ def main():
     dp.add_handler(CommandHandler("get_ss", getSsCommand))
     dp.add_handler(CommandHandler("get_apt_list", getAptListCommand))
     dp.add_handler(CommandHandler("get_services", getServicesCommand))
+    dp.add_handler(CommandHandler("get_repl_logs", getReplLogCommand))
+    dp.add_handler(CommandHandler("get_emails", getEmailsCommand))
+    dp.add_handler(CommandHandler("get_phone_numbers", getPhoneNumbersCommand))
 
     # Регистрируем обработчик текстовых сообщений
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
