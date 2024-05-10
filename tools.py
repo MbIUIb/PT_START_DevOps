@@ -137,6 +137,20 @@ def remoteCmdExecutionBySSH(command: str):
 
 
 def getAllRowFromDBTable(table: str):
+    """ Возвращает все строки из таблицы table
+
+        Args:
+            table: таблица, из которой получаются записи.
+
+        Returns:
+            Возвращает строку, содержащую записи
+            Например:
+
+            1: +7 090-034-51-21
+            2: +7 123-456-78-90
+            3: +7 888-456-78-90
+    """
+
     message = ""
     connection = None
     cursor = None
@@ -166,6 +180,17 @@ def getAllRowFromDBTable(table: str):
 
 
 def insertInBDTable(table: str, column: str, data: str):
+    """ Производит запись указанных данных в таблицу
+
+        Args:
+            table: таблица, в которую записываются данные.
+            column: колонка для записи.
+            data: данные для записи.
+
+        Returns:
+            Возвращает состояние успешности операции записи в БД
+    """
+
     state = False
     connection = None
     cursor = None
@@ -194,6 +219,18 @@ def insertInBDTable(table: str, column: str, data: str):
 
 
 def rowExistsInBDTable(table: str, column: str, string: str):
+    """ Производит проверку на наличие записи в БД
+
+        Args:
+            table: таблица, в которой производится проверка.
+            column: колонка с записью.
+            string: проверяемые на существование данные.
+
+        Returns:
+            Возвращает True или False в зависимости от существования
+            записи в БД.
+    """
+
     exists = False
     connection = None
     cursor = None
@@ -208,6 +245,7 @@ def rowExistsInBDTable(table: str, column: str, string: str):
         cursor = connection.cursor()
         cursor.execute(f"SELECT exists (SELECT 1 FROM {table} WHERE {column} = '{string}' LIMIT 1);")
         data = cursor.fetchall()
+        exists = data[0][0]
         logging.info("Команда успешно выполнена")
     except (Exception, Error) as error:
         logging.error("Ошибка при работе с PostgreSQL: %s", error)
@@ -216,4 +254,4 @@ def rowExistsInBDTable(table: str, column: str, string: str):
             cursor.close()
             connection.close()
 
-        return data[0][0]
+        return exists
